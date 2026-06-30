@@ -1,0 +1,22 @@
+# Dependencias y compilado
+node_modules/
+dist/
+
+# Variables de entorno y credenciales
+.env
+.env.*
+!.env.example
+credentials.json
+*.pem
+
+# Logs y caché
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# Editores
+.idea/
+.vscode/
+*.swp
+*.swo
