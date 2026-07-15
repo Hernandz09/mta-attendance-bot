@@ -9,6 +9,7 @@ function requireEnv(key: string): string {
 export interface DiscordConfig {
   token: string;
   clientId: string;
+  attendanceChannelId: string;
   guildId?: string;
 }
 
@@ -16,6 +17,7 @@ export function loadDiscordConfig(): DiscordConfig {
   return {
     token: requireEnv('DISCORD_TOKEN').trim(),
     clientId: requireEnv('DISCORD_CLIENT_ID').trim(),
+    attendanceChannelId: requireEnv('ATTENDANCE_CHANNEL_ID').trim(),
     guildId: process.env.DISCORD_GUILD_ID?.trim(),
   };
 }

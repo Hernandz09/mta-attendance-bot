@@ -10,6 +10,19 @@ import {
   AttendanceStatusResult,
 } from '../interfaces/attendance.interface';
 
+export function buildAttendancePanelEmbed(): EmbedBuilder {
+  const { start, end } = BUSINESS_RULES.entryWindow;
+
+  return new EmbedBuilder()
+    .setColor(EMBED_COLORS.INFO)
+    .setTitle('Registro de asistencia')
+    .setDescription(
+      'Usa los botones de abajo para marcar tu entrada o salida del día.\n\n' +
+        `Horario de entrada: **${start}** – **${end}**.\n` +
+        'Para consultar tu estado del día, usa `/asistencia estado`.',
+    );
+}
+
 export function buildEntrySuccessEmbed(
   date: string,
   entryTime: string,

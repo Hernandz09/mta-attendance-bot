@@ -5,10 +5,7 @@ import {
 } from 'discord.js';
 import {
   buildAttendanceStatusEmbed,
-  buildEntryHoursClosedEmbed,
-  buildEntrySuccessEmbed,
   buildErrorEmbed,
-  buildExitSuccessEmbed,
   buildGenericErrorEmbed,
   buildUnknownSubcommandEmbed,
 } from '../embeds/response.embeds';
@@ -20,12 +17,6 @@ import { logger } from '../utils/logger';
 const data = new SlashCommandBuilder()
   .setName('asistencia')
   .setDescription('Gestión de asistencia de practicantes')
-  .addSubcommand((sub) =>
-    sub.setName('entrada').setDescription('Registrar hora de entrada'),
-  )
-  .addSubcommand((sub) =>
-    sub.setName('salida').setDescription('Registrar hora de salida'),
-  )
   .addSubcommand((sub) =>
     sub
       .setName('estado')
@@ -40,12 +31,6 @@ async function execute(
 
   try {
     switch (subcommand) {
-      case 'entrada':
-        await handleEntrada(interaction, attendanceService);
-        break;
-      case 'salida':
-        await handleSalida(interaction, attendanceService);
-        break;
       case 'estado':
         await handleEstado(interaction, attendanceService);
         break;
@@ -57,13 +42,8 @@ async function execute(
     }
   } catch (error) {
     if (isAttendanceError(error)) {
-      const embed =
-        error.type === 'entry_hours_closed'
-          ? buildEntryHoursClosedEmbed()
-          : buildErrorEmbed(error.userMessage);
-
       await interaction.reply({
-        embeds: [embed],
+        embeds: [buildErrorEmbed(error.userMessage)],
         flags: MessageFlags.Ephemeral,
       });
       return;
@@ -75,35 +55,6 @@ async function execute(
       flags: MessageFlags.Ephemeral,
     });
   }
-}
-
-async function handleEntrada(
-  interaction: ChatInputCommandInteraction,
-  attendanceService: AttendanceService,
-): Promise<void> {
-  const { date, entryTime, status } = await attendanceService.registerEntry(
-    interaction.user.id,
-    interaction.user.username,
-  );
-
-  await interaction.reply({
-    embeds: [buildEntrySuccessEmbed(date, entryTime, status)],
-    flags: MessageFlags.Ephemeral,
-  });
-}
-
-async function handleSalida(
-  interaction: ChatInputCommandInteraction,
-  attendanceService: AttendanceService,
-): Promise<void> {
-  const { date, exitTime } = await attendanceService.registerExit(
-    interaction.user.id,
-  );
-
-  await interaction.reply({
-    embeds: [buildExitSuccessEmbed(date, exitTime)],
-    flags: MessageFlags.Ephemeral,
-  });
 }
 
 async function handleEstado(
@@ -124,4 +75,3 @@ export const asistenciaCommand: BotCommand = {
 };
 
 export { data, execute };
-

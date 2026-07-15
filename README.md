@@ -1,132 +1,225 @@
-# Strato Attendance Bot
+# MTA Attendance Bot
 
-Bot de Discord para registrar la asistencia de practicantes mediante comandos slash. Los registros se almacenan automáticamente en Google Sheets.
+Bot de Discord para el control de asistencia de practicantes. Resuelve un problema real de operación: registrar entrada/salida sin permitir texto libre en el canal, persistir los datos y sincronizarlos con un dashboard interno.
+
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![discord.js](https://img.shields.io/badge/discord.js-v14-5865F2?logo=discord&logoColor=white)](https://discord.js.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-18+-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+---
+
+## Problema
+
+En un canal de asistencia con **“Enviar mensajes” desactivado** (para evitar chat libre), los practicantes no pueden usar slash commands. Hacía falta un flujo usable, auditable y conectado a un sistema centralizado.
+
+## Solución
+
+Un bot que publica un **panel fijo con botones** (funcionan sin permiso de escribir texto), valida reglas de negocio (ventana horaria y puntualidad), responde de forma **efímera** al usuario y guarda el registro en:
+
+1. **Google Sheets** — respaldo operativo  
+2. **API REST del dashboard** — fuente para supervisión y reportes  
+
+---
+
+## Capturas
+
+> Sustituye los placeholders colocando imágenes en [`docs/screenshots/`](docs/screenshots/README.md).
+
+| Panel de botones | Confirmación de entrada |
+|:---:|:---:|
+| ![Panel de botones](docs/screenshots/01-panel-botones.png) | ![Entrada registrada](docs/screenshots/02-confirmacion-entrada.png) |
+
+| Confirmación de salida | Consulta `/asistencia estado` |
+|:---:|:---:|
+| ![Salida registrada](docs/screenshots/03-confirmacion-salida.png) | ![Estado del día](docs/screenshots/04-comando-estado.png) |
+
+| Dashboard | Google Sheets (opcional) |
+|:---:|:---:|
+| ![Dashboard](docs/screenshots/05-dashboard.png) | ![Sheets](docs/screenshots/06-google-sheets.png) |
+
+---
 
 ## Funcionalidades
 
-- **`/asistencia entrada`** — Registra hora de entrada y estado de puntualidad.
-- **`/asistencia salida`** — Registra hora de salida (requiere entrada previa del día).
-- **`/asistencia estado`** — Consulta entrada, salida y estado del día actual.
+- Panel persistente con botones **Marcar Entrada** / **Marcar Salida** (sin duplicar mensaje al reiniciar; se fija en el canal)
+- Validación de ventana de entrada y cálculo de **Puntual / Tardanza**
+- Respuestas efímeras al practicante (`deferReply` para operaciones lentas)
+- Persistencia en **Google Sheets**
+- Sync best-effort al **dashboard** (`POST` + `x-api-key`; si falla el API, no bloquea al usuario)
+- Consulta del día con `/asistencia estado`
+- Configuración de horarios centralizada en un solo archivo
 
-### Reglas de negocio
+### Reglas de negocio (configurables)
 
-| Regla | Valor por defecto |
-|-------|-------------------|
-| Ventana de registro de entrada | 07:00 – 14:00 |
-| Puntualidad | Hasta la hora límite → **Puntual**, después → **Tardanza** |
-| Zona horaria | `America/Mexico_City` (configurable) |
+| Regla | Valor por defecto | Archivo |
+|-------|-------------------|---------|
+| Ventana de entrada | 07:00 – 23:00 | `src/config/business.ts` |
+| Límite de puntualidad | 07:30 | idem |
+| Zona horaria | `TIMEZONE` en `.env` (ej. `America/Lima`) | `.env` |
 
-Los horarios se centralizan en `src/config/business.ts` y pueden ajustarse sin tocar la lógica de los servicios.
+---
 
 ## Stack
 
-- Node.js + TypeScript
-- [discord.js](https://discord.js.org/) v14
-- Google Sheets API (`googleapis`)
-- dotenv
+| Capa | Tecnología |
+|------|------------|
+| Runtime | Node.js 18+, TypeScript |
+| Discord | discord.js v14 (botones, embeds, slash) |
+| Persistencia | Google Sheets API (`googleapis`) |
+| Integración | `fetch` nativo → API REST interna |
+| Config | dotenv |
+
+---
+
+## Arquitectura
+
+```mermaid
+flowchart LR
+  U[Practicante] -->|Clic botón| D[Discord]
+  D --> B[MTA Attendance Bot]
+  B -->|Validación + puntualidad| S[attendanceService]
+  S --> G[Google Sheets]
+  S -->|Best-effort POST| A[Dashboard API]
+  A --> DB[(MySQL)]
+  U -->|/asistencia estado| B
+```
+
+Separación por capas: `handlers` (Discord) → `services` (negocio + integraciones) → `config` / `embeds` / `utils`.
+
+---
 
 ## Estructura del proyecto
 
 ```
 src/
-├── commands/          # Comandos slash de Discord
-├── config/            # Variables de entorno, constantes y reglas de negocio
-├── embeds/            # Embeds de respuesta al usuario
-├── events/            # Eventos del cliente de Discord
-├── handlers/          # Carga y enrutamiento de comandos
-├── interfaces/        # Modelos del dominio (asistencia)
-├── services/          # Lógica de negocio e integración con Sheets
-├── types/             # Tipos auxiliares (Discord, etc.)
-├── utils/             # Utilidades (fechas, errores, logger)
-├── deploy-commands.ts # Registro de comandos en Discord
-└── index.ts           # Punto de entrada
+├── commands/           # Slash: /asistencia estado
+├── components/         # ActionRow + botones del panel
+├── config/             # Env, Discord, Google, dashboard, reglas de negocio
+├── embeds/             # Respuestas visuales
+├── events/             # ready: init Sheets + panel fijo
+├── handlers/           # commandHandler + buttonHandler
+├── interfaces/         # Modelos de asistencia
+├── services/
+│   ├── attendanceService.ts   # Lógica de negocio
+│   ├── sheetsService.ts       # Google Sheets
+│   └── dashboardService.ts    # HTTP al backend
+├── types/
+├── utils/
+├── deploy-commands.ts
+└── index.ts
 ```
 
-## Requisitos previos
+---
 
-- Node.js 18 o superior
-- Una aplicación de bot en el [Discord Developer Portal](https://discord.com/developers/applications)
-- Un proyecto en [Google Cloud](https://console.cloud.google.com/) con la API de Google Sheets habilitada
-- Una hoja de cálculo de Google compartida con la cuenta de servicio
+## Puesta en marcha
 
-## Configuración
+### Requisitos
 
-### 1. Discord
+- Node.js 18+
+- Bot en el [Discord Developer Portal](https://discord.com/developers/applications)
+- Google Cloud con **Sheets API** + cuenta de servicio
+- (Opcional) Backend con endpoints `/api/attendance/entrada` y `/salida`
 
-1. Crea una aplicación en el Developer Portal.
-2. En **Bot**, genera un token y cópialo.
-3. En **OAuth2 → URL Generator**, selecciona los scopes `bot` y `applications.commands`.
-4. Invita el bot a tu servidor con permisos básicos.
-5. Copia el **Application ID** (`DISCORD_CLIENT_ID`) y el **Server ID** (`DISCORD_GUILD_ID`, recomendado en desarrollo).
-
-### 2. Google Sheets
-
-1. Crea un proyecto en Google Cloud y habilita **Google Sheets API**.
-2. Crea una **cuenta de servicio** y descarga el JSON de credenciales.
-3. Crea una hoja de cálculo y compártela con el email de la cuenta de servicio (permiso **Editor**).
-4. Copia el ID de la hoja desde la URL:
-   `https://docs.google.com/spreadsheets/d/<GOOGLE_SHEETS_ID>/edit`
-
-El bot crea automáticamente la pestaña `Asistencias` con estas columnas:
-
-| discord_id | username | fecha | hora_entrada | hora_salida | estado |
-|------------|----------|-------|--------------|-------------|--------|
-
-El campo `estado` guarda **Puntual** o **Tardanza** al registrar la entrada.
-
-### 3. Variables de entorno
-
-Copia el archivo de ejemplo y completa los valores:
+### 1. Clonar e instalar
 
 ```bash
+git clone https://github.com/Hernandz09/mta-attendance-bot.git
+cd mta-attendance-bot
+npm install
 cp .env.example .env
 ```
 
-Consulta `.env.example` para la lista completa de variables.
+### 2. Variables de entorno
 
-> **Importante:** Nunca subas el archivo `.env` a GitHub. Contiene credenciales sensibles.
+Completa `.env` (ver `.env.example`). Resumen:
 
-## Instalación y ejecución
+| Variable | Uso |
+|----------|-----|
+| `DISCORD_TOKEN` / `DISCORD_CLIENT_ID` | Autenticación del bot |
+| `ATTENDANCE_CHANNEL_ID` | Canal del panel de botones |
+| `DISCORD_GUILD_ID` | Registro rápido de comandos (dev) |
+| `GOOGLE_*` | Acceso a la hoja de cálculo |
+| `DASHBOARD_API_URL` / `ATTENDANCE_BOT_API_KEY` | Sync opcional al dashboard |
+| `TIMEZONE` | Zona horaria de negocio |
+
+> Nunca subas el `.env` ni claves privadas. `.gitignore` ya excluye secretos.
+
+### 3. Discord
+
+1. Crea la aplicación y el bot; copia token y Application ID.  
+2. Invita con scopes `bot` + `applications.commands`.  
+3. En `#asistencias`, el bot necesita ver canal, enviar mensajes, leer historial y (recomendado) fijar mensajes.  
+4. Los practicantes pueden tener **Enviar mensajes** desactivado: los botones siguen funcionando.
+
+### 4. Google Sheets
+
+1. Comparte la hoja con el email de la cuenta de servicio (Editor).  
+2. El bot crea/usa la pestaña `Asistencias` con columnas:  
+   `discord_id | username | fecha | hora_entrada | hora_salida | estado`
+
+### 5. Ejecutar
 
 ```bash
-# Instalar dependencias
-npm install
-
-# Registrar comandos slash (usar DISCORD_GUILD_ID para registro inmediato en un servidor)
-npm run deploy-commands
-
-# Desarrollo (recarga automática)
-npm run dev
-
-# Producción
-npm run build
-npm start
+npm run deploy-commands   # registrar /asistencia estado
+npm run dev               # desarrollo
+# o
+npm run build && npm start
 ```
 
-## Scripts disponibles
+---
+
+## Scripts
 
 | Script | Descripción |
 |--------|-------------|
-| `npm run dev` | Inicia el bot en modo desarrollo con `tsx watch` |
-| `npm run build` | Compila TypeScript a `dist/` |
-| `npm start` | Ejecuta el bot compilado |
-| `npm run deploy-commands` | Publica los comandos slash en Discord |
+| `npm run dev` | Desarrollo con recarga (`tsx watch`) |
+| `npm run build` | Compila a `dist/` |
+| `npm start` | Ejecuta el build |
+| `npm run deploy-commands` | Publica slash commands |
+
+---
+
+## Decisiones de diseño (destacables en CV)
+
+- **Botones vs slash** en canales restringidos (UX alineada a permisos de Discord).  
+- **Sheets primero, dashboard después** — consistencia si el API cae; sync “best effort”.  
+- **`deferReply`** ante I/O lento (evita `Unknown interaction` / 10062).  
+- **Reglas de negocio desacopladas** del transporte Discord.  
+- Panel **idempotente** al reiniciar (busca mensaje existente / pin).
+
+---
+
+## Roadmap
+
+Ideas siguientes (fuera del MVP actual):
+
+- [ ] Justificación de tardanzas/ausencias hacia canal de supervisión  
+- [ ] Reporte semanal automático (cron)  
+- [ ] Cierre automático de salidas no marcadas al final del día  
+
+---
 
 ## Solución de problemas
 
-**Los comandos no aparecen en Discord**
-- Ejecuta `npm run deploy-commands`.
-- Si no usas `DISCORD_GUILD_ID`, los comandos globales pueden tardar hasta ~1 hora.
+**`Unknown interaction` (10062)**  
+Ya mitigado con `deferReply` en los botones. Si aparece, confirma que no hay otra instancia del bot respondiendo la misma interacción.
 
-**Error al conectar con Discord (`Unexpected server response: 500`)**
-- Verifica que `DISCORD_TOKEN` sea válido y no tenga espacios ni comillas extra.
-- Cierra otras instancias del bot que usen el mismo token.
-- Consulta el estado en [discordstatus.com](https://discordstatus.com).
+**Los botones no aparecen**  
+Revisa `ATTENDANCE_CHANNEL_ID` y permisos del bot en ese canal.
 
-**Error al escribir en Google Sheets**
-- Confirma que la hoja esté compartida con la cuenta de servicio.
-- Revisa que `GOOGLE_PRIVATE_KEY` conserve los saltos de línea (`\n`) en el `.env`.
+**Falla solo el dashboard**  
+El usuario igual ve éxito (Sheets OK). Revisa logs: `Error al sincronizar ... con el dashboard`.
+
+**Comandos slash no aparecen**  
+`npm run deploy-commands`. Sin `DISCORD_GUILD_ID`, el deploy global puede tardar ~1 h.
+
+---
 
 ## Licencia
 
-[MIT](LICENSE)
+[MIT](LICENSE) — Copyright © 2026 MTA
+
+---
+
+Hecho como MVP de integración Discord + TypeScript + APIs externas, orientado a un flujo real de operaciones.

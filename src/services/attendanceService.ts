@@ -11,19 +11,33 @@ import {
   isWithinEntryWindow,
   resolveEntryPunctualityStatus,
 } from '../utils/date';
+import { logger } from '../utils/logger';
+import { DashboardService } from './dashboardService';
 import { SheetsService } from './sheetsService';
 
 export class AttendanceService {
   private sheetsService: SheetsService;
+  private dashboardService: DashboardService | null;
   private timezone: string;
 
   constructor(config: AppConfig) {
     this.sheetsService = new SheetsService(config.google);
+    this.dashboardService = config.dashboard
+      ? new DashboardService(config.dashboard)
+      : null;
     this.timezone = config.timezone;
   }
 
   async initialize(): Promise<void> {
     await this.sheetsService.ensureSheetExists();
+
+    if (this.dashboardService) {
+      logger.info('Sync con dashboard habilitado');
+    } else {
+      logger.info(
+        'Sync con dashboard desactivado (falta DASHBOARD_API_URL / ATTENDANCE_BOT_API_KEY)',
+      );
+    }
   }
 
   async registerEntry(
@@ -60,6 +74,14 @@ export class AttendanceService {
       status,
     );
 
+    await this.syncEntryToDashboard(
+      discordId,
+      username,
+      date,
+      entryTime,
+      status,
+    );
+
     return { date, entryTime, status };
   }
 
@@ -74,7 +96,7 @@ export class AttendanceService {
     if (!record) {
       throw new AttendanceError(
         'No entry found for today',
-        'No tienes una entrada registrada hoy. Usa `/asistencia entrada` primero.',
+        'No tienes una entrada registrada hoy. Marca tu entrada primero.',
       );
     }
 
@@ -86,6 +108,8 @@ export class AttendanceService {
     }
 
     await this.sheetsService.updateExit(record.rowIndex, exitTime);
+
+    await this.syncExitToDashboard(discordId, date, exitTime);
 
     return { date, exitTime };
   }
@@ -111,6 +135,46 @@ export class AttendanceService {
       exitTime: record.exitTime || null,
       status,
     };
+  }
+
+  private async syncEntryToDashboard(
+    discordId: string,
+    username: string,
+    date: string,
+    entryTime: string,
+    status: AttendanceStatus,
+  ): Promise<void> {
+    if (!this.dashboardService) {
+      return;
+    }
+
+    try {
+      await this.dashboardService.registerEntry(
+        discordId,
+        username,
+        date,
+        entryTime,
+        status,
+      );
+    } catch (error) {
+      logger.error('Error al sincronizar entrada con el dashboard:', error);
+    }
+  }
+
+  private async syncExitToDashboard(
+    discordId: string,
+    date: string,
+    exitTime: string,
+  ): Promise<void> {
+    if (!this.dashboardService) {
+      return;
+    }
+
+    try {
+      await this.dashboardService.registerExit(discordId, date, exitTime);
+    } catch (error) {
+      logger.error('Error al sincronizar salida con el dashboard:', error);
+    }
   }
 
   private resolveStoredStatus(storedStatus: string): AttendanceStatus {

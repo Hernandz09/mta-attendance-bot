@@ -36,6 +36,11 @@ export const COMMAND_NAMES = {
   ASISTENCIA: 'asistencia',
 } as const;
 
+export const BUTTON_CUSTOM_IDS = {
+  MARCAR_ENTRADA: 'marcar_entrada',
+  MARCAR_SALIDA: 'marcar_salida',
+} as const;
+
 export const EMPTY_DISPLAY_VALUE = '—';
 
 export const EMBED_COLORS = {

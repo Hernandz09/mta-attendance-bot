@@ -8,7 +8,7 @@ export const BUSINESS_RULES = {
   timezone: DEFAULT_TIMEZONE,
   entryWindow: {
     start: '07:00',
-    end: '14:00',
+    end: '23:00',
   },
   punctuality: {
     onTimeUntil: '07:30',

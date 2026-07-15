@@ -1,20 +1,109 @@
-import { Client, Events } from 'discord.js';
-import { AttendanceService } from '../services/attendanceService';
-import { logger } from '../utils/logger';
-
-export function registerReadyWithInit(
-  client: Client,
-  attendanceService: AttendanceService,
-): void {
-  client.once(Events.ClientReady, async (readyClient) => {
-    try {
-      await attendanceService.initialize();
-      logger.info(`Bot conectado como ${readyClient.user.tag}`);
-      logger.info('Google Sheets inicializado correctamente');
-    } catch (error) {
-      logger.error('Error al inicializar Google Sheets:', error);
-      process.exit(1);
-    }
-  });
-}
-
+import {
+  Client,
+  ComponentType,
+  Events,
+  Message,
+  TextChannel,
+} from 'discord.js';
+import { BUTTON_CUSTOM_IDS } from '../config/constants';
+import { AppConfig } from '../config/env';
+import { buildAttendanceButtonRow } from '../components/attendanceButtons';
+import { buildAttendancePanelEmbed } from '../embeds/response.embeds';
+import { AttendanceService } from '../services/attendanceService';
+import { logger } from '../utils/logger';
+
+const PANEL_FETCH_LIMIT = 50;
+
+function isAttendancePanelMessage(message: Message, botUserId: string): boolean {
+  if (message.author.id !== botUserId) {
+    return false;
+  }
+
+  const panelCustomIds = new Set<string>(Object.values(BUTTON_CUSTOM_IDS));
+
+  return message.components.some((row) => {
+    if (row.type !== ComponentType.ActionRow) {
+      return false;
+    }
+
+    return row.components.some((component) => {
+      if (!('customId' in component) || typeof component.customId !== 'string') {
+        return false;
+      }
+      return panelCustomIds.has(component.customId);
+    });
+  });
+}
+
+async function ensureAttendancePanel(
+  client: Client,
+  channelId: string,
+): Promise<void> {
+  const channel = await client.channels.fetch(channelId);
+
+  if (!channel || !(channel instanceof TextChannel)) {
+    throw new Error(
+      `ATTENDANCE_CHANNEL_ID no es un canal de texto válido: ${channelId}`,
+    );
+  }
+
+  const botUserId = client.user?.id;
+  if (!botUserId) {
+    throw new Error('El cliente de Discord no tiene usuario listo');
+  }
+
+  const embeds = [buildAttendancePanelEmbed()];
+  const components = [buildAttendanceButtonRow()];
+
+  const pinnedMessages = await channel.messages.fetchPinned();
+  let existingPanel = pinnedMessages.find((message) =>
+    isAttendancePanelMessage(message, botUserId),
+  );
+
+  if (!existingPanel) {
+    const recentMessages = await channel.messages.fetch({
+      limit: PANEL_FETCH_LIMIT,
+    });
+    existingPanel = recentMessages.find((message) =>
+      isAttendancePanelMessage(message, botUserId),
+    );
+  }
+
+  if (existingPanel) {
+    await existingPanel.edit({ embeds, components });
+    if (!existingPanel.pinned) {
+      await existingPanel.pin().catch((error) => {
+        logger.warn('No se pudo fijar el panel de asistencia existente:', error);
+      });
+    }
+    logger.info(`Panel de asistencia actualizado en #${channel.name}`);
+    return;
+  }
+
+  const panelMessage = await channel.send({ embeds, components });
+  await panelMessage.pin().catch((error) => {
+    logger.warn('No se pudo fijar el panel de asistencia:', error);
+  });
+  logger.info(`Panel de asistencia publicado en #${channel.name}`);
+}
+
+export function registerReadyWithInit(
+  client: Client,
+  attendanceService: AttendanceService,
+  config: AppConfig,
+): void {
+  client.once(Events.ClientReady, async (readyClient) => {
+    try {
+      await attendanceService.initialize();
+      await ensureAttendancePanel(
+        readyClient,
+        config.discord.attendanceChannelId,
+      );
+      logger.info(`Bot conectado como ${readyClient.user.tag}`);
+      logger.info('Google Sheets inicializado correctamente');
+    } catch (error) {
+      logger.error('Error al inicializar el bot:', error);
+      process.exit(1);
+    }
+  });
+}
